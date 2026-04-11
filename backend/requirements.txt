@@ -1,0 +1,6 @@
+# Flask API（校园智慧助手）
+# 安装: pip install -r requirements.txt
+flask>=3.0.0,<4.0.0
+flask-cors>=4.0.0,<5.0.0
+flask-sqlalchemy>=3.1.1,<4.0.0
+gunicorn>=21.2.0,<22.0.0

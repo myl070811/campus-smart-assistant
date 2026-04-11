@@ -1,0 +1,16 @@
+[
+  {
+    "course_name": "高等数学",
+    "start_at": "2026-04-06T08:00:00",
+    "end_at": "2026-04-06T09:40:00",
+    "location": "教学楼A-302",
+    "description": "第6周课程"
+  },
+  {
+    "course_name": "大学英语",
+    "start_at": "2026-04-07T10:00:00",
+    "end_at": "2026-04-07T11:40:00",
+    "location": "教学楼B-201",
+    "description": "阅读与写作"
+  }
+]
