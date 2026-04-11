@@ -62,11 +62,20 @@
           </template>
         </el-table-column>
         <el-table-column prop="deadline" :label="t('deadline')" width="120" align="center" />
-        <el-table-column prop="priority" :label="t('priority')" width="100" align="center">
+        <el-table-column prop="priority" :label="t('priority')" width="138" align="center">
           <template #default="{ row }">
-            <el-tag :type="priorityTagType(row.priority)" size="small">
-              {{ t(row.priority) }}
-            </el-tag>
+            <div class="task-center__priority-cell" @click.stop>
+              <el-select
+                :model-value="row.priorityValue"
+                size="small"
+                class="task-center__priority-select"
+                @change="(v) => onPriorityChange(row, v)"
+              >
+                <el-option :label="t('priorityHigh')" value="high" />
+                <el-option :label="t('priorityMedium')" value="medium" />
+                <el-option :label="t('priorityLow')" value="low" />
+              </el-select>
+            </div>
           </template>
         </el-table-column>
         <el-table-column prop="status" :label="t('status')" width="110" align="center">
@@ -175,7 +184,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { MagicStick, Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { createTask, getTasks } from '../api/task'
+import { createTask, getTasks, updateTaskPriority } from '../api/task'
 import { t, td } from '../i18n'
 import { roleState } from '../stores/role'
 
@@ -224,19 +233,35 @@ function normalizeWorkflowStatus(v) {
   return 'pending'
 }
 
+const PRIORITY_API = new Set(['high', 'medium', 'low'])
+
+function priorityValueFromDomain(t) {
+  const p = t?.priority
+  if (PRIORITY_API.has(p)) return p
+  return 'medium'
+}
+
+function priorityI18nFromValue(v) {
+  if (v === 'high') return 'priorityHigh'
+  if (v === 'low') return 'priorityLow'
+  return 'priorityMedium'
+}
+
 /**
  * 将领域任务（API 已映射为 camelCase）转为表格行
  */
 function mapDomainTaskToRow(t) {
   if (!t || typeof t !== 'object' || !t.title) return null
   const id = t.id != null ? String(t.id) : ''
+  const pv = priorityValueFromDomain(t)
   return {
     title: t.title,
     source: t.sourceI18n,
     type: t.typeI18n,
     owner: t.ownerIsSelf ? 'ownerSelf' : t.ownerName || '—',
     deadline: t.dueDate ?? '',
-    priority: t.priorityI18n,
+    priorityValue: pv,
+    priority: priorityI18nFromValue(pv),
     status: normalizeWorkflowStatus(t.status),
     taskId: id || undefined,
     _rowId: id ? `srv_${id}` : nextRowId(),
@@ -340,12 +365,17 @@ function generateTasksFromAiPrompt(description) {
     },
   ]
 
-  return templates.slice(0, count).map((row, i) => ({
-    ...row,
-    title: t(row.key).replace('{topic}', snippet),
-    deadline: deadlineAfter(2 + i * 2),
-    status: 'pending',
-  }))
+  return templates.slice(0, count).map((row, i) => {
+    const pv =
+      row.priority === 'priorityHigh' ? 'high' : row.priority === 'priorityLow' ? 'low' : 'medium'
+    return {
+      ...row,
+      priorityValue: pv,
+      title: t(row.key).replace('{topic}', snippet),
+      deadline: deadlineAfter(2 + i * 2),
+      status: 'pending',
+    }
+  })
 }
 
 async function onAiGenerate() {
@@ -407,6 +437,24 @@ function statusTagType(status) {
   return legacy[status] ?? 'info'
 }
 
+async function onPriorityChange(row, newVal) {
+  if (!row || newVal == null || row.priorityValue === newVal) return
+  if (row.taskId) {
+    try {
+      await updateTaskPriority(row.taskId, newVal)
+      row.priorityValue = newVal
+      row.priority = priorityI18nFromValue(newVal)
+      ElMessage.success(t('taskPriorityUpdated'))
+    } catch (e) {
+      ElMessage.error(td(e?.message || t('taskPriorityUpdateFailed')))
+    }
+    return
+  }
+  row.priorityValue = newVal
+  row.priority = priorityI18nFromValue(newVal)
+  ElMessage.success(t('taskPriorityUpdatedLocal'))
+}
+
 function onAddTask() {
   createVisible.value = true
 }
@@ -438,6 +486,7 @@ async function submitCreateTask() {
       title,
       description: createForm.value.description || '',
       task_type: createForm.value.task_type,
+      assignment_type: 'single_department',
       current_org_id: 'personal',
       current_owner_name: actorName,
       deadline: createForm.value.deadline,
@@ -509,6 +558,10 @@ async function submitCreateTask() {
 
 .task-center__table {
   width: 100%;
+}
+
+.task-center__priority-select {
+  width: 118px;
 }
 
 .task-center__table :deep(.el-table__body tr) {

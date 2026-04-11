@@ -37,6 +37,23 @@ TASK_SOURCE_TYPES = (
     TASK_SOURCE_PARENT_UNIT,
 )
 
+# --- Task flow / collaboration (赛题：单部门 / 跨部门协作 / 自上而下) ---
+TASK_FLOW_SINGLE_DEPARTMENT = "single_department"
+TASK_FLOW_CROSS_DEPARTMENT = "cross_department"
+TASK_FLOW_TOP_DOWN = "top_down"
+
+TASK_FLOW_TYPES = (
+    TASK_FLOW_SINGLE_DEPARTMENT,
+    TASK_FLOW_CROSS_DEPARTMENT,
+    TASK_FLOW_TOP_DOWN,
+)
+
+# 历史 assignment_type 取值兼容
+LEGACY_ASSIGNMENT_TO_FLOW = {
+    "direct": TASK_FLOW_SINGLE_DEPARTMENT,
+    "self": TASK_FLOW_SINGLE_DEPARTMENT,
+}
+
 # --- Task kind (free-form taxonomy, extend as needed) ---
 TASK_TYPE_HOMEWORK = "homework"
 TASK_TYPE_AFFAIRS = "affairs"
@@ -61,6 +78,7 @@ TASK_LOG_CREATE = "create"
 TASK_LOG_VIEW = "view"
 TASK_LOG_STATUS_CHANGE = "status_change"
 TASK_LOG_TRANSFER = "transfer"
+TASK_LOG_PRIORITY_CHANGE = "priority_change"
 
 # --- Organization ---
 ORG_TYPE_YOUTH_LEAGUE = "youth_league"

@@ -50,6 +50,24 @@ def seed_if_empty() -> None:
     )
     db.session.add(student)
 
+    student_b = Student(
+        student_id="2023XXXX0219",
+        display_name="李华",
+        phone="13800003190",
+        wechat="lihua_lab",
+        email="li.hua@stu.university.edu.cn",
+        github="",
+        weibo="",
+        ethnicity="汉族",
+        id_card_no="440301200402022468",
+        volunteer_ref_id="VOL-2024-0319",
+        grade="2023级",
+        college="计算机科学与技术学院",
+        major="信息安全",
+        class_name="信安 2023-1 班",
+    )
+    db.session.add(student_b)
+
     modules = [
         {"module": "编程", "tags": ["Python", "Vue", "Flask"]},
         {"module": "策划", "tags": ["活动统筹", "流程设计"]},
@@ -64,6 +82,13 @@ def seed_if_empty() -> None:
             for m in modules
         ]
     )
+    db.session.add(
+        SkillModule(
+            student_id=student_b.student_id,
+            module="编程",
+            tags_json=json.dumps(["C++", "网络安全基础"], ensure_ascii=False),
+        )
+    )
 
     db.session.add_all(
         [
@@ -73,6 +98,7 @@ def seed_if_empty() -> None:
                 activity_title="迎新志愿服务（报到引导）",
                 service_date="2025-09-06",
                 hours=6.0,
+                status=E.VOLUNTEER_STATUS_RECOGNIZED,
             ),
             VolunteerRecord(
                 id="vr_2",
@@ -80,6 +106,15 @@ def seed_if_empty() -> None:
                 activity_title="校园马拉松后勤保障",
                 service_date="2026-03-15",
                 hours=5.5,
+                status=E.VOLUNTEER_STATUS_PENDING_REVIEW,
+            ),
+            VolunteerRecord(
+                id="vr_3",
+                volunteer_ref_id="VOL-2024-0319",
+                activity_title="图书馆志愿整架",
+                service_date="2026-03-10",
+                hours=3.0,
+                status=E.VOLUNTEER_STATUS_RECOGNIZED,
             ),
         ]
     )
@@ -163,7 +198,8 @@ def seed_if_empty() -> None:
             title="完成《数据结构》第三章课后习题",
             description="整理第三章栈与队列的课后习题解答，标注思考过程与参考教材页码。",
             source_type=E.TASK_SOURCE_COURSE,
-            assignment_type="direct",
+            assignment_type=E.TASK_FLOW_SINGLE_DEPARTMENT,
+            collaborating_org_ids_json=json.dumps(["tw"], ensure_ascii=False),
             parent_task_id="",
             source_org_id="",
             current_org_id="tw",
@@ -180,7 +216,8 @@ def seed_if_empty() -> None:
             title="学生会宣传部本周推文素材整理",
             description="汇总本周活动照片与文案要点，按发布时间线归档，交予审核。",
             source_type=E.TASK_SOURCE_ORGANIZATION,
-            assignment_type="direct",
+            assignment_type=E.TASK_FLOW_SINGLE_DEPARTMENT,
+            collaborating_org_ids_json=json.dumps(["xsh"], ensure_ascii=False),
             parent_task_id="",
             source_org_id="xsh",
             current_org_id="xsh",
@@ -197,7 +234,8 @@ def seed_if_empty() -> None:
             title="准备英语四级模拟卷复盘",
             description="完成一套全真模拟后，登记错题类型与对应生词本条目。",
             source_type=E.TASK_SOURCE_PERSONAL,
-            assignment_type="self",
+            assignment_type=E.TASK_FLOW_SINGLE_DEPARTMENT,
+            collaborating_org_ids_json="[]",
             parent_task_id="",
             source_org_id="",
             current_org_id="tw",
@@ -207,6 +245,24 @@ def seed_if_empty() -> None:
             owner_is_self=True,
             due_date=_parse_dt("2026-04-05"),
             priority=E.TASK_PRIORITY_MEDIUM,
+            status=E.TASK_STATUS_PENDING,
+        ),
+        Task(
+            id="t4",
+            title="迎新晚会联合筹备（团委×学生会）",
+            description="统筹场地审批与宣传物料联动，双方组织对齐时间节点与责任人。",
+            source_type=E.TASK_SOURCE_ORGANIZATION,
+            assignment_type=E.TASK_FLOW_CROSS_DEPARTMENT,
+            collaborating_org_ids_json=json.dumps(["tw", "xsh"], ensure_ascii=False),
+            parent_task_id="",
+            source_org_id="tw",
+            current_org_id="xsh",
+            current_owner_id="2023XXXX0312",
+            task_type=E.TASK_TYPE_COORDINATE,
+            current_owner_name="李雪",
+            owner_is_self=False,
+            due_date=_parse_dt("2026-04-08"),
+            priority=E.TASK_PRIORITY_HIGH,
             status=E.TASK_STATUS_PENDING,
         ),
     ]
@@ -255,6 +311,87 @@ def seed_if_empty() -> None:
             for (i, title, et, source, start_at, end_at, location, desc, is_editable, is_plan) in schedule_events
         ]
     )
+
+    db.session.commit()
+
+
+def ensure_demo_extensions() -> None:
+    """
+    在「已有旧种子库」上幂等补全：第二名学生、其技能/志愿记录、跨部门示例任务 t4。
+    解决仅执行过早期 seed_if_empty 的环境看不到 student02 数据的问题。
+    """
+    sid_b = "2023XXXX0219"
+    if not Student.query.filter_by(student_id=sid_b).first():
+        db.session.add(
+            Student(
+                student_id=sid_b,
+                display_name="李华",
+                phone="13800003190",
+                wechat="lihua_lab",
+                email="li.hua@stu.university.edu.cn",
+                github="",
+                weibo="",
+                ethnicity="汉族",
+                id_card_no="440301200402022468",
+                volunteer_ref_id="VOL-2024-0319",
+                grade="2023级",
+                college="计算机科学与技术学院",
+                major="信息安全",
+                class_name="信安 2023-1 班",
+            )
+        )
+
+    if not SkillModule.query.filter_by(student_id=sid_b).first():
+        db.session.add(
+            SkillModule(
+                student_id=sid_b,
+                module="编程",
+                tags_json=json.dumps(["C++", "网络安全基础"], ensure_ascii=False),
+            )
+        )
+
+    if not VolunteerRecord.query.filter_by(id="vr_3").first():
+        db.session.add(
+            VolunteerRecord(
+                id="vr_3",
+                volunteer_ref_id="VOL-2024-0319",
+                activity_title="图书馆志愿整架",
+                service_date="2026-03-10",
+                hours=3.0,
+                status=E.VOLUNTEER_STATUS_RECOGNIZED,
+            )
+        )
+
+    if not Task.query.filter_by(id="t4").first():
+        t4 = Task(
+            id="t4",
+            title="迎新晚会联合筹备（团委×学生会）",
+            description="统筹场地审批与宣传物料联动，双方组织对齐时间节点与责任人。",
+            source_type=E.TASK_SOURCE_ORGANIZATION,
+            assignment_type=E.TASK_FLOW_CROSS_DEPARTMENT,
+            collaborating_org_ids_json=json.dumps(["tw", "xsh"], ensure_ascii=False),
+            parent_task_id="",
+            source_org_id="tw",
+            current_org_id="xsh",
+            current_owner_id="2023XXXX0312",
+            task_type=E.TASK_TYPE_COORDINATE,
+            current_owner_name="李雪",
+            owner_is_self=False,
+            due_date=_parse_dt("2026-04-08"),
+            priority=E.TASK_PRIORITY_HIGH,
+            status=E.TASK_STATUS_PENDING,
+        )
+        db.session.add(t4)
+        db.session.flush()
+        db.session.add(
+            TaskLog(
+                task_id="t4",
+                action=E.TASK_LOG_CREATE,
+                actor="system",
+                created_at=datetime.now(timezone.utc).replace(microsecond=0),
+                note="",
+            )
+        )
 
     db.session.commit()
 

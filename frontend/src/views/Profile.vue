@@ -9,6 +9,14 @@
     </div>
 
     <el-alert v-if="error" type="error" :title="error" :closable="false" show-icon class="profile__alert" />
+    <el-alert
+      v-else-if="showNotLinkedTip"
+      type="info"
+      :title="t('profileNotLinked')"
+      :closable="false"
+      show-icon
+      class="profile__alert"
+    />
 
     <el-row :gutter="12" class="profile__stats">
       <el-col :xs="12" :md="6">
@@ -73,7 +81,7 @@
       <template #header>
         <div class="profile__card-head">
           <span class="profile__card-title">{{ t('profileSectionBasicDocs') }}</span>
-          <el-button type="primary" size="small" @click="openEditProfile">{{ t('profileEditProfile') }}</el-button>
+          <el-button v-if="!showNotLinkedTip" type="primary" size="small" @click="openEditProfile">{{ t('profileEditProfile') }}</el-button>
         </div>
       </template>
       <el-descriptions :column="2" border class="profile__descriptions">
@@ -152,7 +160,7 @@
           <div class="profile__header-actions">
             <el-button size="small" @click="loadProfile">{{ t('profileRefresh') }}</el-button>
             <el-button
-              v-if="roleState.roleCode === 'student'"
+              v-if="roleState.roleCode === 'student' && !showNotLinkedTip"
               type="primary"
               size="small"
               @click="awardDialogVisible = true"
@@ -261,6 +269,8 @@ import { t, td } from '../i18n'
 
 const loading = ref(true)
 const error = ref('')
+/** 避免首屏 basicInfo 为空时误显示「未绑定」提示 */
+const profileLoadedOk = ref(false)
 const basicInfo = ref({
   name: '',
   studentId: '',
@@ -288,6 +298,15 @@ const roleLabel = computed(() => {
   return t('roleStudent')
 })
 
+/** 会话未带学号或库中无对应学生时，档案区为空 */
+const showNotLinkedTip = computed(
+  () =>
+    profileLoadedOk.value &&
+    !error.value &&
+    !loading.value &&
+    !String(basicInfo.value.studentId || '').trim(),
+)
+
 const editDialogVisible = ref(false)
 const profileSaving = ref(false)
 const editForm = ref({
@@ -308,7 +327,10 @@ const awardForm = ref({
 })
 
 const totalVolunteerHours = computed(() =>
-  volunteerRecords.value.reduce((sum, r) => sum + Number(r.hours || 0), 0).toFixed(1),
+  volunteerRecords.value
+    .filter((r) => r.status === 'recognized')
+    .reduce((sum, r) => sum + Number(r.hours || 0), 0)
+    .toFixed(1),
 )
 
 const approvedAwardsCount = computed(() =>
@@ -379,6 +401,7 @@ const maskedIdCard = computed(() => {
 async function loadProfile() {
   loading.value = true
   error.value = ''
+  profileLoadedOk.value = false
   try {
     const [mapped, taskRows] = await Promise.all([getProfile(), getTasks()])
     basicInfo.value = mapped.basicInfo
@@ -387,6 +410,7 @@ async function loadProfile() {
     honors.value = mapped.honors || []
     submissions.value = mapped.submissions || []
     tasks.value = Array.isArray(taskRows) ? taskRows : []
+    profileLoadedOk.value = true
   } catch (e) {
     error.value = td(e?.message || t('profileLoadError'))
   } finally {
@@ -429,7 +453,6 @@ async function submitAwardRecord() {
   awardSubmitting.value = true
   try {
     await submitAward({
-      student_id: basicInfo.value.studentId,
       award_name: awardForm.value.award_name,
       award_time: awardForm.value.award_time,
       proof_file: awardForm.value.proof_file,

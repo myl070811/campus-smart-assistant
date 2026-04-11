@@ -13,7 +13,7 @@ from flask_cors import CORS
 
 from data.db import db
 from data.migrate import run_migrations
-from data.seed import seed_if_empty
+from data.seed import ensure_demo_extensions, seed_if_empty
 from routes import register_routes
 
 
@@ -49,6 +49,7 @@ def create_app() -> Flask:
         db.create_all()
         run_migrations()
         seed_if_empty()
+        ensure_demo_extensions()
 
     register_routes(app)
 

@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from werkzeug.datastructures import FileStorage
 
+from . import enums as E
 from .db import db
 from .models import IntegrationImportLog, ScheduleEvent, Student, VolunteerRecord
 
@@ -155,6 +156,11 @@ def import_data(import_type: str, file: FileStorage) -> Tuple[bool, str, Dict[st
                 hours = float(hours_raw)
                 if not activity_title or not service_date:
                     raise ValueError("字段缺失：activity_title 或 service_date")
+                raw_status = str(row.get("status") or "").strip().lower()
+                if raw_status in E.VOLUNTEER_STATUSES:
+                    vr_status = raw_status
+                else:
+                    vr_status = E.VOLUNTEER_STATUS_PENDING_REVIEW
                 db.session.add(
                     VolunteerRecord(
                         id=f"vr_ext_{uuid4().hex[:10]}",
@@ -162,6 +168,7 @@ def import_data(import_type: str, file: FileStorage) -> Tuple[bool, str, Dict[st
                         activity_title=activity_title,
                         service_date=service_date,
                         hours=hours,
+                        status=vr_status,
                     )
                 )
             success += 1

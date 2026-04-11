@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
+from . import enums as E
 from .db import db
 from .models import Award, AwardReview, SkillModule, Student, VolunteerRecord
 
@@ -65,17 +66,24 @@ def _award_to_dict(a: Award) -> Dict[str, Any]:
     }
 
 
-def get_profile() -> Dict[str, Any]:
-    student = Student.query.first()
+def _empty_profile() -> Dict[str, Any]:
+    return {
+        "student": None,
+        "skill_modules": [],
+        "volunteer_records": [],
+        "volunteer_total_hours": 0.0,
+        "awards_public": [],
+        "awards_submissions": [],
+    }
+
+
+def get_profile(student_id: Optional[str]) -> Dict[str, Any]:
+    sid = (student_id or "").strip()
+    if not sid:
+        return _empty_profile()
+    student = Student.query.filter_by(student_id=sid).first()
     if not student:
-        return {
-            "student": {},
-            "skill_modules": [],
-            "volunteer_records": [],
-            "volunteer_total_hours": 0,
-            "awards_public": [],
-            "awards_submissions": [],
-        }
+        return _empty_profile()
     volunteer_id = student.volunteer_ref_id
     vr_rows = VolunteerRecord.query.filter_by(volunteer_ref_id=volunteer_id).order_by(VolunteerRecord.service_date.desc()).all()
     vr = [
@@ -85,10 +93,14 @@ def get_profile() -> Dict[str, Any]:
             "activity_title": x.activity_title,
             "service_date": x.service_date,
             "hours": float(x.hours or 0),
+            "status": getattr(x, "status", None) or E.VOLUNTEER_STATUS_PENDING_REVIEW,
         }
         for x in vr_rows
     ]
-    total_hours = round(sum(float(x["hours"]) for x in vr), 1)
+    total_hours = round(
+        sum(float(x["hours"]) for x in vr if x.get("status") == E.VOLUNTEER_STATUS_RECOGNIZED),
+        1,
+    )
     modules = SkillModule.query.filter_by(student_id=student.student_id).order_by(SkillModule.id.asc()).all()
     skill_modules = []
     for x in modules:
@@ -109,10 +121,15 @@ def get_profile() -> Dict[str, Any]:
     }
 
 
-def update_student_profile(payload: Dict[str, Any]) -> Dict[str, Any]:
-    s = Student.query.first()
+def update_student_profile(
+    student_id: str, payload: Dict[str, Any]
+) -> Tuple[bool, Optional[str], Dict[str, Any]]:
+    sid = (student_id or "").strip()
+    if not sid:
+        return False, "profile not linked to student account", {}
+    s = Student.query.filter_by(student_id=sid).first()
     if not s:
-        return {}
+        return False, "student not found", {}
     editable = {
         "display_name",
         "phone",
@@ -131,7 +148,7 @@ def update_student_profile(payload: Dict[str, Any]) -> Dict[str, Any]:
         if key in payload:
             setattr(s, key, str(payload.get(key) or "").strip())
     db.session.commit()
-    return _student_to_dict(s)
+    return True, None, _student_to_dict(s)
 
 
 def submit_award(
@@ -140,6 +157,11 @@ def submit_award(
     award_time: str,
     proof_file: Optional[FileStorage],
 ) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
+    sid = (student_id or "").strip()
+    if not sid:
+        return False, "student_id is required", None
+    if not Student.query.filter_by(student_id=sid).first():
+        return False, "student not found", None
     if not award_name.strip():
         return False, "award_name is required", None
     if not award_time.strip():
@@ -159,7 +181,7 @@ def submit_award(
 
     award = Award(
         id=award_id,
-        student_id=student_id,
+        student_id=sid,
         award_name=award_name.strip(),
         award_time=award_time.strip(),
         proof_file_name=saved_name,
@@ -180,11 +202,11 @@ def list_awards_for_admin(status: Optional[str] = None) -> List[Dict[str, Any]]:
     if status and status in {"pending", "approved", "rejected"}:
         q = q.filter_by(status=status)
     rows = q.order_by(Award.submitted_at.desc()).all()
-    student = Student.query.first()
     result = []
     for x in rows:
         row = _award_to_dict(x)
-        row["student_name"] = student.display_name if student else ""
+        stu = Student.query.filter_by(student_id=x.student_id).first()
+        row["student_name"] = stu.display_name if stu else x.student_id
         result.append(row)
     return result
 
@@ -200,6 +222,8 @@ def review_award(
     target = Award.query.filter_by(id=award_id).first()
     if not target:
         return False, "award not found", None
+    if status == "rejected" and not (review_comment or "").strip():
+        return False, "reject_reason_required", None
     target.status = status
     target.review_comment = (review_comment or "").strip()
     target.reviewed_at = _now_iso()

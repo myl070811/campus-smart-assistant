@@ -106,6 +106,10 @@ function openReview(row, action) {
 
 async function submitReview() {
   if (!reviewTarget.value?.id) return
+  if (reviewAction.value === 'rejected' && !String(reviewComment.value || '').trim()) {
+    ElMessage.warning(t('reviewRejectReasonRequired'))
+    return
+  }
   reviewSubmitting.value = true
   try {
     await reviewAward(reviewTarget.value.id, {

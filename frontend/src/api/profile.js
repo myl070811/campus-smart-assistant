@@ -32,7 +32,6 @@ export async function updateProfile(payload) {
 
 export async function submitAward(formPayload) {
   const form = new FormData()
-  form.set('student_id', formPayload?.student_id ?? '')
   form.set('award_name', formPayload?.award_name ?? '')
   form.set('award_time', formPayload?.award_time ?? '')
   if (formPayload?.proof_file) {

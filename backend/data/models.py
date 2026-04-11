@@ -62,7 +62,8 @@ class Task(db.Model):
     description = db.Column(db.Text, nullable=False, default="")
     task_type = db.Column(db.String(32), nullable=False, default="affairs")
     source_type = db.Column(db.String(32), nullable=False, default="personal")
-    assignment_type = db.Column(db.String(32), nullable=False, default="direct")
+    assignment_type = db.Column(db.String(32), nullable=False, default="single_department")
+    collaborating_org_ids_json = db.Column(db.Text, nullable=False, default="[]")
     parent_task_id = db.Column(db.String(32), nullable=False, default="")
     source_org_id = db.Column(db.String(32), nullable=False, default="")
     current_org_id = db.Column(db.String(32), nullable=False, default="")
@@ -115,6 +116,8 @@ class VolunteerRecord(db.Model):
     activity_title = db.Column(db.String(255), nullable=False, default="")
     service_date = db.Column(db.String(32), nullable=False, default="")
     hours = db.Column(db.Float, nullable=False, default=0.0)
+    # recognized = 已认定，可计入志愿总时长；导入默认为 pending_review
+    status = db.Column(db.String(32), nullable=False, default="pending_review", index=True)
 
 
 class Award(db.Model):

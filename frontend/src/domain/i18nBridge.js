@@ -26,6 +26,13 @@ export const taskPriorityToI18n = Object.freeze({
   low: 'priorityLow',
 })
 
+/** 赛题任务流：单部门 / 跨部门 / 自上而下 */
+export const taskFlowToI18n = Object.freeze({
+  single_department: 'taskFlowSingleDepartment',
+  cross_department: 'taskFlowCrossDepartment',
+  top_down: 'taskFlowTopDown',
+})
+
 export const organizationTypeToI18n = Object.freeze({
   youth_league: 'orgTypeYouthLeague',
   student_union: 'orgTypeStudentOrg',

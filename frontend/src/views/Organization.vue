@@ -307,6 +307,8 @@
           <el-descriptions-item :label="t('orgFieldTaskTitle')">{{ td(selectedBoardTask.title) }}</el-descriptions-item>
           <el-descriptions-item :label="t('orgFieldOrganization')">{{ td(selectedBoardTask.orgName) }}</el-descriptions-item>
           <el-descriptions-item :label="t('orgFieldTaskType')">{{ t(selectedBoardTask.typeKey) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('taskFlowCategory')">{{ t(selectedBoardTask.taskFlowI18n || 'taskFlowSingleDepartment') }}</el-descriptions-item>
+          <el-descriptions-item :label="t('taskCollaboratingOrgs')">{{ collabOrgDisplay(selectedBoardTask) }}</el-descriptions-item>
           <el-descriptions-item :label="t('orgFieldAssignee')">{{ td(selectedBoardTask.ownerName || '—') }}</el-descriptions-item>
           <el-descriptions-item :label="t('orgFieldTaskSource')">{{ t(selectedBoardTask.sourceKey) }}</el-descriptions-item>
           <el-descriptions-item :label="t('orgFieldTaskStatus')">
@@ -363,6 +365,29 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-form-item :label="t('taskFlowCategory')">
+          <el-select v-model="assignForm.assignment_type" style="width: 100%" @change="onAssignFlowChange">
+            <el-option :label="t('taskFlowSingleDepartment')" value="single_department" />
+            <el-option :label="t('taskFlowCrossDepartment')" value="cross_department" />
+            <el-option :label="t('taskFlowTopDown')" value="top_down" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="assignForm.assignment_type === 'cross_department'" :label="t('taskCollaboratingOrgs')">
+          <el-select
+            v-model="assignForm.collaborating_org_ids"
+            multiple
+            filterable
+            style="width: 100%"
+            :placeholder="t('taskCollaboratingOrgsPlaceholder')"
+          >
+            <el-option
+              v-for="org in organizations"
+              :key="`collab-${org.id}`"
+              :label="td(org.name)"
+              :value="org.id"
+            />
+          </el-select>
+        </el-form-item>
         <el-row :gutter="10">
           <el-col :span="12">
             <el-form-item :label="t('orgFieldAssignOrg')">
@@ -550,6 +575,8 @@ const assignForm = ref({
   title: '',
   description: '',
   task_type: 'affairs',
+  assignment_type: 'single_department',
+  collaborating_org_ids: [],
   current_org_id: '',
   current_owner_name: '',
   deadline: '',
@@ -613,7 +640,11 @@ const boardStats = computed(() => {
     doneCount: rows.filter((x) => x.status === 'done').length,
     totalOrganizations: organizations.value.length,
     activeTasks: rows.filter((x) => x.status === 'in_progress' || x.status === 'viewed').length,
-    crossOrgTasks: rows.filter((x) => x.sourceOrgId && x.currentOrgId && x.sourceOrgId !== x.currentOrgId).length,
+    crossOrgTasks: rows.filter(
+      (x) =>
+        x.assignmentType === 'cross_department' ||
+        (Array.isArray(x.collaboratingOrgIds) && x.collaboratingOrgIds.length > 1),
+    ).length,
   }
 })
 
@@ -730,16 +761,32 @@ function taskFlowSummary(row) {
   return `${td(sourceOrg)} -> ${td(currentOrg)} -> ${owner}`
 }
 
+function onAssignFlowChange() {
+  if (assignForm.value.assignment_type !== 'cross_department') {
+    assignForm.value.collaborating_org_ids = []
+  }
+}
+
 function onAssignTask() {
+  const oid = activeOrgId.value || organizations.value[0]?.id || ''
   assignForm.value = {
     title: '',
     description: '',
     task_type: 'affairs',
-    current_org_id: activeOrgId.value || organizations.value[0]?.id || '',
+    assignment_type: 'single_department',
+    collaborating_org_ids: [],
+    current_org_id: oid,
     current_owner_name: '',
     deadline: '',
   }
   assignVisible.value = true
+}
+
+function collabOrgDisplay(row) {
+  const ids = row?.collaboratingOrgIds
+  if (!Array.isArray(ids) || !ids.length) return '—'
+  const map = new Map(organizations.value.map((o) => [o.id, o.name]))
+  return ids.map((id) => td(map.get(id) || id)).join(' / ')
 }
 
 function emptyOrgForm() {
@@ -880,6 +927,9 @@ function formatBoardLog(log) {
       .replace('{from}', td(log.fromOwner || t('commonUnassigned')))
       .replace('{to}', td(log.toOwner || t('commonUnassigned')))
   }
+  if (log.action === 'priority_change') {
+    return t('taskLogPriorityChange').replace('{detail}', td(String(log.note || '—')))
+  }
   return td(log.action || '')
 }
 
@@ -952,17 +1002,36 @@ watch(
 )
 
 async function submitAssignTask() {
+  if (assignForm.value.assignment_type === 'cross_department') {
+    const ids = assignForm.value.collaborating_org_ids || []
+    if (ids.length < 2) {
+      ElMessage.warning(t('taskFlowCrossOrgsMinTwo'))
+      return
+    }
+    if (!ids.includes(assignForm.value.current_org_id)) {
+      ElMessage.warning(t('taskFlowCrossMustIncludeCurrentOrg'))
+      return
+    }
+  }
   assignSubmitting.value = true
   try {
+    let source_org_id = twOrgId.value
+    if (assignForm.value.assignment_type === 'single_department') {
+      source_org_id = assignForm.value.current_org_id || twOrgId.value
+    }
     const payload = {
       title: assignForm.value.title,
       description: assignForm.value.description,
       task_type: assignForm.value.task_type,
-      source_org_id: twOrgId.value,
+      assignment_type: assignForm.value.assignment_type,
+      source_org_id,
       current_org_id: assignForm.value.current_org_id,
       current_owner_name: assignForm.value.current_owner_name,
       deadline: assignForm.value.deadline,
       status: 'pending',
+    }
+    if (assignForm.value.assignment_type === 'cross_department') {
+      payload.collaborating_org_ids = [...assignForm.value.collaborating_org_ids]
     }
     await createTask(payload)
     assignVisible.value = false

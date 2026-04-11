@@ -33,10 +33,25 @@
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item :label="t('type')">{{ t(task.typeI18n) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('taskFlowCategory')">{{ t(task.taskFlowI18n || 'taskFlowSingleDepartment') }}</el-descriptions-item>
+        <el-descriptions-item :label="t('taskCollaboratingOrgs')">{{ collaboratingOrgLine }}</el-descriptions-item>
         <el-descriptions-item :label="t('owner')">{{ ownerLabel(task.ownerName, task.ownerIsSelf) }}</el-descriptions-item>
         <el-descriptions-item :label="t('deadline')">{{ task.dueDate }}</el-descriptions-item>
         <el-descriptions-item :label="t('priority')">
-          <el-tag :type="priorityTagType(task.priorityI18n)" size="small">{{ t(task.priorityI18n) }}</el-tag>
+          <template v-if="canEditTaskMeta">
+            <el-select
+              :model-value="priorityApiValue"
+              size="small"
+              class="task-detail__priority-select"
+              :loading="prioritySubmitting"
+              @change="onPriorityChange"
+            >
+              <el-option :label="t('priorityHigh')" value="high" />
+              <el-option :label="t('priorityMedium')" value="medium" />
+              <el-option :label="t('priorityLow')" value="low" />
+            </el-select>
+          </template>
+          <el-tag v-else :type="priorityTagType(task.priorityI18n)" size="small">{{ t(task.priorityI18n) }}</el-tag>
         </el-descriptions-item>
         <el-descriptions-item :label="t('status')">
           <el-tag :type="statusTagType(task.status)" size="small">{{ t(flowI18nKey(task.status)) }}</el-tag>
@@ -119,8 +134,9 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { getTaskDetail, transferTask, updateTaskStatus } from '../api/task'
+import { getTaskDetail, transferTask, updateTaskPriority, updateTaskStatus } from '../api/task'
 import { t, td } from '../i18n'
+import { roleState } from '../stores/role'
 
 const FLOW_ORDER = ['pending', 'viewed', 'in_progress', 'done']
 
@@ -151,6 +167,7 @@ const history = ref([])
 const transferVisible = ref(false)
 const transferTo = ref('')
 const transferNote = ref('')
+const prioritySubmitting = ref(false)
 
 const stepActive = computed(() => {
   const s = task.value?.status
@@ -162,6 +179,32 @@ const nextStatus = computed(() => {
   const s = task.value?.status
   if (!s) return null
   return NEXT_STATUS[s] ?? null
+})
+
+const collaboratingOrgLine = computed(() => {
+  const ids = task.value?.collaboratingOrgIds
+  if (!Array.isArray(ids) || !ids.length) return '—'
+  return ids.join(', ')
+})
+
+/** 与后端 _can_operate_task 一致：本人任务、负责人姓名匹配、或组织/团委角色 */
+const canEditTaskMeta = computed(() => {
+  const tk = task.value
+  if (!tk) return false
+  const role = roleState.roleCode
+  if (role === 'tw_admin' || role === 'org_admin') return true
+  if (tk.ownerIsSelf) return true
+  const owner = String(tk.ownerName || '').trim()
+  if (!owner) return false
+  const un = String(roleState.username || '').trim()
+  const dn = String(roleState.displayName || '').trim()
+  return owner === un || owner === dn
+})
+
+const priorityApiValue = computed(() => {
+  const p = task.value?.priority
+  if (p === 'high' || p === 'medium' || p === 'low') return p
+  return 'medium'
 })
 
 function flowI18nKey(status) {
@@ -215,6 +258,9 @@ function formatLogLine(log) {
       .replace('{from}', td(String(log.fromOwner ?? '—')))
       .replace('{to}', td(String(log.toOwner ?? '—')))
   }
+  if (action === 'priority_change') {
+    return t('taskLogPriorityChange').replace('{detail}', td(String(log.note || '—')))
+  }
   return action || '—'
 }
 
@@ -254,6 +300,26 @@ watch(
 
 function goBack() {
   router.push('/tasks')
+}
+
+async function onPriorityChange(newVal) {
+  const id = route.params.id
+  if (!id || !newVal || newVal === priorityApiValue.value) return
+  prioritySubmitting.value = true
+  try {
+    const r = await updateTaskPriority(id, newVal)
+    if (r.success && r.data?.task) {
+      task.value = r.data.task
+      history.value = Array.isArray(r.data.logs) ? [...r.data.logs].reverse() : []
+      ElMessage.success(t('taskPriorityUpdated'))
+      return
+    }
+    ElMessage.error(td(r?.message || t('taskPriorityUpdateFailed')))
+  } catch (e) {
+    ElMessage.error(td(e?.message || t('taskPriorityUpdateFailed')))
+  } finally {
+    prioritySubmitting.value = false
+  }
 }
 
 async function onAdvanceStatus() {
@@ -351,6 +417,11 @@ async function onTransferSubmit() {
 
 .task-detail__desc {
   margin-bottom: 8px;
+}
+
+.task-detail__priority-select {
+  width: 200px;
+  max-width: 100%;
 }
 
 .task-detail__section {

@@ -30,7 +30,14 @@ def get_dashboard_data() -> dict:
     today_course_count = sum(1 for x in schedule_events if x["event_type"] == E.SCHEDULE_EVENT_TYPE_CLASS and x["start_at"].startswith(anchor_date))
     pending_task_count = Task.query.filter(Task.status.in_([E.TASK_STATUS_PENDING, E.TASK_STATUS_VIEWED])).count()
     ongoing_task_count = Task.query.filter_by(status=E.TASK_STATUS_IN_PROGRESS).count()
-    volunteer_hours_total = round(sum(float(x.hours or 0) for x in VolunteerRecord.query.all()), 1)
+    volunteer_hours_total = round(
+        sum(
+            float(x.hours or 0)
+            for x in VolunteerRecord.query.all()
+            if getattr(x, "status", E.VOLUNTEER_STATUS_RECOGNIZED) == E.VOLUNTEER_STATUS_RECOGNIZED
+        ),
+        1,
+    )
 
     return {
         "stats": {

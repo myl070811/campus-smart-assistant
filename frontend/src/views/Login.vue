@@ -13,10 +13,14 @@
         <el-button type="primary" :loading="submitting" style="width: 100%" @click="onSubmit">{{ t('loginSubmit') }}</el-button>
       </el-form>
       <div class="login__demo">
-        <div>{{ t('loginDemoAccounts') }}</div>
-        <div>`student01 / 123456` ({{ t('roleStudent') }})</div>
-        <div>`orgadmin01 / 123456` ({{ t('roleOrgAdmin') }})</div>
-        <div>`twadmin01 / 123456` ({{ t('roleTwAdmin') }})</div>
+        <div class="login__demo-title">{{ t('loginDemoHeading') }}</div>
+        <ul class="login__demo-list">
+          <li><code>student01</code> / <code>123456</code> — {{ t('roleStudent') }}（陈思远）</li>
+          <li><code>student02</code> / <code>123456</code> — {{ t('roleStudent') }}（李华，{{ t('loginDemoSecondStudentNote') }}）</li>
+          <li><code>orgadmin01</code> / <code>123456</code> — {{ t('roleOrgAdmin') }}</li>
+          <li><code>twadmin01</code> / <code>123456</code> — {{ t('roleTwAdmin') }}</li>
+        </ul>
+        <p class="login__demo-tip">{{ t('loginDemoFeatureTip') }}</p>
       </div>
     </el-card>
   </div>
@@ -61,6 +65,11 @@ async function onSubmit() {
 .login__card { width: 420px; border: 1px solid #ebeef5; }
 .login__title { margin: 0 0 8px; color: #303133; }
 .login__subtitle { margin: 0 0 16px; color: #909399; font-size: 13px; }
-.login__demo { margin-top: 16px; color: #606266; font-size: 12px; line-height: 1.8; }
+.login__demo { margin-top: 16px; color: #606266; font-size: 12px; line-height: 1.65; }
+.login__demo-title { font-weight: 600; color: #303133; margin-bottom: 8px; }
+.login__demo-list { margin: 0; padding-left: 18px; }
+.login__demo-list li { margin: 4px 0; }
+.login__demo-list code { font-size: 11px; background: #f4f4f5; padding: 1px 5px; border-radius: 3px; }
+.login__demo-tip { margin: 10px 0 0; padding: 8px 10px; background: #ecf5ff; border-radius: 6px; color: #409eff; font-size: 12px; }
 </style>
 

@@ -10,6 +10,7 @@ import {
   leaderRoleToI18n,
   mapEnumToI18n,
   organizationTypeToI18n,
+  taskFlowToI18n,
   taskPriorityToI18n,
   taskSourceTypeToI18n,
   taskTypeToI18n,
@@ -54,7 +55,9 @@ export function mapProfileFromApi(body) {
     }
   }
 
-  const student = body.student ?? body.basic_info ?? {}
+  const rawStudent = body.student ?? body.basic_info
+  const student =
+    rawStudent != null && typeof rawStudent === 'object' ? rawStudent : {}
   const s = pickStudent(student)
   const basicInfo = {
     name: s.displayName || student.name || '',
@@ -285,6 +288,13 @@ export function mapTaskFromApi(raw) {
   let ownerName = raw.current_owner_name ?? raw.owner_name ?? raw.owner ?? ''
   if (ownerIsSelf && !ownerName) ownerName = ''
 
+  const flowRaw = raw.assignment_type ?? raw.task_flow ?? 'single_department'
+  const assignmentType = String(flowRaw || 'single_department')
+  const collabRaw = raw.collaborating_org_ids
+  const collaboratingOrgIds = Array.isArray(collabRaw)
+    ? collabRaw.map((x) => String(x))
+    : []
+
   return {
     id,
     title: raw.title ?? '',
@@ -298,9 +308,12 @@ export function mapTaskFromApi(raw) {
     dueDate: raw.due_date ?? raw.deadline ?? '',
     priority,
     status: raw.status ?? 'pending',
+    assignmentType,
+    collaboratingOrgIds,
     sourceI18n: mapEnumToI18n(taskSourceTypeToI18n, sourceType, 'sourcePersonal'),
     typeI18n: mapEnumToI18n(taskTypeToI18n, taskType, 'taskTypeAffairs'),
     priorityI18n: mapEnumToI18n(taskPriorityToI18n, priority, 'priorityMedium'),
+    taskFlowI18n: mapEnumToI18n(taskFlowToI18n, assignmentType, 'taskFlowSingleDepartment'),
   }
 }
 

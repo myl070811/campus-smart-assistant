@@ -28,6 +28,20 @@ def _normalize_status(raw: str) -> str:
     return mapping.get(s, s)
 
 
+def _normalize_priority(raw: str) -> str:
+    s = (raw or "").strip().lower()
+    mapping = {
+        "高": "high",
+        "紧急": "high",
+        "high": "high",
+        "中": "medium",
+        "medium": "medium",
+        "低": "low",
+        "low": "low",
+    }
+    return mapping.get(s, s)
+
+
 @bp.get("")
 @require_login
 def get_tasks():
@@ -92,6 +106,36 @@ def update_task_status(task_id: str):
             {"success": False, "error": err_code, "message": message or err_code}
         )
 
+    return jsonify({"success": True, "data": payload})
+
+
+@bp.patch("/<task_id>/priority")
+@require_login
+def update_task_priority(task_id: str):
+    user = get_current_user() or {}
+    body = request.get_json(silent=True) or {}
+    raw = body.get("priority")
+    if raw is None or not isinstance(raw, str) or not str(raw).strip():
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "bad_request",
+                    "message": "请求体需包含 priority",
+                }
+            ),
+            400,
+        )
+    new_priority = _normalize_priority(str(raw).strip())
+    ok, err_code, message, payload = task_service.update_priority(
+        task_id, new_priority, _actor(), user=user
+    )
+    if not ok and err_code == "not_found":
+        return jsonify({"error": "not_found", "message": message or "任务不存在"}), 404
+    if not ok and err_code == "forbidden":
+        return jsonify({"error": "forbidden", "message": message or "无权限执行该操作"}), 403
+    if not ok:
+        return jsonify({"success": False, "error": err_code, "message": message or err_code}), 400
     return jsonify({"success": True, "data": payload})
 
 

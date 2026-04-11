@@ -133,9 +133,12 @@ VITE_DEV_API_TARGET=http://127.0.0.1:5000
 
 | 用户名 | 密码 | 角色 | 用途 |
 |---|---|---|---|
-| `student01` | `123456` | `student` | 学生视角演示 |
+| `student01` | `123456` | `student` | 学生「陈思远」档案与任务演示 |
+| `student02` | `123456` | `student` | 学生「李华」独立档案（多学生隔离） |
 | `orgadmin01` | `123456` | `org_admin` | 组织管理与导入 |
 | `twadmin01` | `123456` | `tw_admin` | 团委审核与全量演示 |
+
+> 演示账号在登录会话中携带 `student_id`，并与种子数据中的学生主键一致：`student01` / `orgadmin01` / `twadmin01` → `2023XXXX0218`，`student02` → `2023XXXX0219`（李华，独立档案与志愿号）。若升级代码后档案为空，请**退出并重新登录**以刷新会话。需要重新写入两名学生的种子数据时，可删除持久化库文件（如 Docker 下的 `deploy-data/sqlite/*.db`）后重启后端。生产环境应对接统一身份，将账号与学号做一一映射。
 
 ## 角色权限矩阵
 
@@ -150,8 +153,8 @@ VITE_DEV_API_TARGET=http://127.0.0.1:5000
 ## 核心功能模块简介
 
 - `Dashboard`：汇总今日课程、任务状态、志愿时长等指标
-- `Task Center / Task Detail`：任务创建、状态推进、转交、日志记录
-- `Organization`：组织档案管理、组织任务流转、分配与转交
+- `Task Center / Task Detail`：任务创建、状态推进、转交、日志记录；任务流类型（单部门 / 跨部门协作 / 自上而下）与协作组织展示
+- `Organization`：组织档案管理、组织任务流转、分配任务时必选任务流类型（跨部门须多选组织且含执行组织）
 - `Schedule`：课表/任务/志愿/勤工/大创/个人计划统一时间视图
 - `Profile`：学生基础信息、能力标签、志愿记录、奖项申请
 - `Quality Review`：团委管理员审核奖项材料
@@ -189,44 +192,22 @@ VITE_DEV_API_TARGET=http://127.0.0.1:5000
 - 后端：`http://localhost:${BACKEND_PORT}`（默认容器映射 `5000:5000`）
 - 健康检查：`http://localhost:${BACKEND_PORT}/api/health`
 
-## 常见问题排查
+## 常见问题（FAQ）
 
-### 1) 无法登录 / 接口返回 401
+1. **`docker compose up -d` 后页面打不开**  
+   确认本机 `80` / `5000` 未被占用，或修改 `.env` 中的 `FRONTEND_PORT`、`BACKEND_PORT` 后重新启动。
 
-- 确认先访问登录页并成功登录
-- 确认前端请求统一走同源 `/api`（默认配置）
-- 本地分离开发时确认 `VITE_DEV_API_TARGET` 指向可访问后端
-- 确认浏览器未禁用 Cookie
+2. **首次启动提示无法挂载 `deploy-data`**  
+   Compose 会在项目根目录下使用 `./deploy-data/sqlite`、`./deploy-data/uploads` 等路径；若环境限制导致失败，可手动创建对应空目录后再执行 `docker compose up -d`。
 
-### 2) Docker 启动后前端可开、接口失败
+3. **个人档案为空或奖项提交失败**  
+   多为旧会话中缺少 `student_id` 字段。请退出登录后重新使用演示账号登录；并确认后端已完成种子初始化（空库首次启动会自动写入）。
 
-- 检查 `backend` 容器状态：`docker compose ps`
-- 查看后端日志：`docker compose logs backend`
-- 访问健康检查确认后端可用
+4. **`student02`（李华）档案全空**  
+   若数据库是在「增加第二名学生」之前生成的，需**重启一次后端容器/进程**：启动时会执行 `ensure_demo_extensions()` 自动补全李华与示例跨部门任务 `t4`。仍无效时再按上文删除 sqlite 后重启。
 
-### 3) 上传文件或持久化数据丢失
+5. **导入 CSV 报错编码**  
+   请使用 UTF-8（Excel 可选择「CSV UTF-8」导出），详见数据接入中心页面说明。
 
-- 确认宿主机目录存在并可写：
-  - `deploy-data/sqlite`
-  - `deploy-data/uploads`
-  - `deploy-data/org-logos`
-
-### 4) 修改代码后希望重建容器
-
-```bash
-docker compose down
-docker compose up -d --build
-```
-
-## 答辩演示建议路径
-
-建议流程（约 5 分钟）：
-
-1. 使用 `student01` 登录，展示 Dashboard 总览
-2. 进入 Schedule / Tasks，展示时间与任务联动
-3. 切换 `orgadmin01`，展示 Organization 分配与转交、Data Integration 导入
-4. 返回学生 Profile，展示奖项提交
-5. 使用 `twadmin01` 进入 Quality Review，展示审核闭环
-6. 在 Settings 演示三语切换
-
-> 现场讲稿版请见 `DEMO_GUIDE.md`。
+6. **团委审核「驳回」**  
+   系统要求驳回时填写审核意见（与赛题要求一致）；仅「通过」时意见可为空。

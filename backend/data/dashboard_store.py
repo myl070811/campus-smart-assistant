@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func
 
+from . import enums as E
 from .db import db
 from .models import Organization, ScheduleEvent, Task, VolunteerRecord
 
@@ -43,7 +44,11 @@ def get_dashboard_data() -> dict:
         .all()
     )
 
-    db_val = db.session.query(func.sum(VolunteerRecord.hours)).scalar()
+    db_val = (
+        db.session.query(func.sum(VolunteerRecord.hours))
+        .filter(VolunteerRecord.status == E.VOLUNTEER_STATUS_RECOGNIZED)
+        .scalar()
+    )
     volunteer_hours_total = float(db_val) if db_val else 0.0
     recent_tasks = (
         Task.query

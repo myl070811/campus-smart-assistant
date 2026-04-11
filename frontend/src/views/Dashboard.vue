@@ -5,6 +5,11 @@
       <p class="dashboard__subtitle">{{ t('dashboardSubtitle') }}</p>
     </div>
 
+    <el-alert type="info" :closable="false" show-icon class="dashboard__demo-hint">
+      <template #title>{{ t('dashboardDemoHintTitle') }}</template>
+      <div class="dashboard__demo-hint-body">{{ t('dashboardDemoHintBody') }}</div>
+    </el-alert>
+
     <el-alert
       v-if="error"
       type="error"
@@ -163,7 +168,10 @@ const approvedAwardCount = computed(() =>
 )
 const volunteerContribution = computed(() => {
   const records = profileSnapshot.value?.volunteerRecords || []
-  return records.reduce((sum, x) => sum + Number(x.hours || 0), 0).toFixed(1)
+  return records
+    .filter((x) => x.status === 'recognized')
+    .reduce((sum, x) => sum + Number(x.hours || 0), 0)
+    .toFixed(1)
 })
 const roleViewLabel = computed(() => {
   if (roleState.roleCode === 'tw_admin') return t('roleTwAdmin')
@@ -347,6 +355,18 @@ function statusTagType(status) {
 .dashboard {
   max-width: 1200px;
   margin: 0 auto;
+}
+
+.dashboard__demo-hint {
+  margin-bottom: 16px;
+}
+
+.dashboard__demo-hint-body {
+  font-size: 13px;
+  line-height: 1.65;
+  color: #606266;
+  margin-top: 6px;
+  white-space: pre-line;
 }
 
 .dashboard__intro {

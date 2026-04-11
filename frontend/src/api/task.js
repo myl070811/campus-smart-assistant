@@ -121,6 +121,36 @@ export async function updateTaskStatus(id, status) {
 }
 
 /**
+ * PATCH /api/tasks/:id/priority — body: { priority: 'high' | 'medium' | 'low' }
+ */
+export async function updateTaskPriority(id, priority) {
+  const res = await fetch(`${API_BASE}/api/tasks/${encodeURIComponent(id)}/priority`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ priority }),
+  })
+  const body = await readJson(res)
+  if (res.status === 404) {
+    const err = new Error(body.message || '任务不存在')
+    err.code = 'not_found'
+    throw err
+  }
+  if (!res.ok) {
+    throw new Error(body.message || `updateTaskPriority: HTTP ${res.status}`)
+  }
+  if (body.success && body.data) {
+    body.data = {
+      task: mapTaskFromApi(body.data.task),
+      logs: Array.isArray(body.data.logs)
+        ? body.data.logs.map((l) => mapTaskLogFromApi(l)).filter(Boolean)
+        : [],
+    }
+  }
+  return body
+}
+
+/**
  * POST /api/tasks/:id/transfer
  */
 export async function transferTask(id, payload) {

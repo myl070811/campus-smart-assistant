@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -7,7 +8,7 @@ from sqlalchemy import func, or_
 
 from . import enums as E
 from .db import db
-from .models import Task, TaskLog
+from .models import Organization, Task, TaskLog
 
 NEXT_STATUS: Dict[str, Optional[str]] = {
     E.TASK_STATUS_PENDING: E.TASK_STATUS_VIEWED,
@@ -47,14 +48,46 @@ def _due_date_display(dt: Optional[datetime]) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%d")
 
 
+def _normalize_task_flow(raw: str) -> str:
+    s = (raw or "").strip()
+    if s in E.TASK_FLOW_TYPES:
+        return s
+    return E.LEGACY_ASSIGNMENT_TO_FLOW.get(s, E.TASK_FLOW_SINGLE_DEPARTMENT)
+
+
+def _parse_collaborating_org_ids(task: Task) -> List[str]:
+    try:
+        data = json.loads(task.collaborating_org_ids_json or "[]")
+        if isinstance(data, list):
+            return [str(x).strip() for x in data if str(x).strip()]
+    except json.JSONDecodeError:
+        pass
+    return []
+
+
+def _collaborating_org_ids_from_payload(normalized: Dict[str, Any]) -> List[str]:
+    raw = normalized.get("collaborating_org_ids")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            raw = []
+    if not isinstance(raw, list):
+        return []
+    return [str(x).strip() for x in raw if str(x).strip()]
+
+
 def _task_public(task: Task) -> Dict[str, Any]:
+    flow = _normalize_task_flow(task.assignment_type or "")
+    collab = _parse_collaborating_org_ids(task)
     return {
         "id": task.id,
         "title": task.title,
         "description": task.description or "",
         "task_type": task.task_type,
         "source_type": task.source_type,
-        "assignment_type": task.assignment_type or "direct",
+        "assignment_type": flow,
+        "collaborating_org_ids": collab,
         "parent_task_id": task.parent_task_id or "",
         "source_org_id": task.source_org_id or "",
         "current_org_id": task.current_org_id or "",
@@ -191,7 +224,6 @@ def create_task(
     due_date_raw = str(normalized.get("deadline", "") or normalized.get("due_date", "")).strip()
     description = str(normalized.get("description", "")).strip()
     status = str(normalized.get("status", E.TASK_STATUS_PENDING)).strip() or E.TASK_STATUS_PENDING
-    assignment_type = str(normalized.get("assignment_type", "direct")).strip() or "direct"
     parent_task_id = str(normalized.get("parent_task_id", "")).strip()
     owner_is_self = bool(normalized.get("owner_is_self"))
 
@@ -211,13 +243,46 @@ def create_task(
     if status not in E.TASK_STATUSES:
         return False, "bad_request", "invalid status", None
 
+    if role == "student":
+        flow = E.TASK_FLOW_SINGLE_DEPARTMENT
+        collab_json = "[]"
+    else:
+        flow = _normalize_task_flow(
+            str(normalized.get("assignment_type") or normalized.get("task_flow") or "").strip()
+            or E.TASK_FLOW_SINGLE_DEPARTMENT
+        )
+        collab_ids = _collaborating_org_ids_from_payload(normalized)
+        if flow not in E.TASK_FLOW_TYPES:
+            return False, "bad_request", "invalid task flow", None
+        if flow == E.TASK_FLOW_CROSS_DEPARTMENT:
+            uniq = list(dict.fromkeys(collab_ids))
+            if len(uniq) < 2:
+                return False, "bad_request", "cross_department_requires_two_orgs", None
+            if current_org_id not in uniq:
+                return False, "bad_request", "cross_department_current_org_must_be_in_list", None
+            for oid in uniq:
+                if not Organization.query.filter_by(id=oid).first():
+                    return False, "bad_request", "organization not found", None
+            collab_json = json.dumps(uniq, ensure_ascii=False)
+        elif flow == E.TASK_FLOW_TOP_DOWN:
+            if not source_org_id:
+                return False, "bad_request", "top_down_requires_source_org", None
+            pair = list(dict.fromkeys([source_org_id, current_org_id]))
+            collab_json = json.dumps(pair, ensure_ascii=False)
+        else:
+            if current_org_id and current_org_id != "personal":
+                collab_json = json.dumps([current_org_id], ensure_ascii=False)
+            else:
+                collab_json = "[]"
+
     task = Task(
         id=_next_task_id(),
         title=title,
         description=description,
         task_type=task_type,
         source_type=E.TASK_SOURCE_ORGANIZATION if source_org_id else E.TASK_SOURCE_PERSONAL,
-        assignment_type=assignment_type,
+        assignment_type=flow,
+        collaborating_org_ids_json=collab_json,
         parent_task_id=parent_task_id,
         source_org_id=source_org_id,
         current_org_id=current_org_id,
@@ -259,6 +324,30 @@ def update_status(
         return False, "invalid_transition", "请按顺序推进状态", None
     _append_log(task.id, actor, E.TASK_LOG_STATUS_CHANGE, from_status=cur, to_status=new_status)
     task.status = new_status
+    db.session.commit()
+    return True, None, None, {"task": _task_public(task), "logs": _task_logs(task.id)}
+
+
+def update_priority(
+    task_id: str, new_priority: str, actor: str, user: Optional[Dict[str, Any]] = None
+) -> Tuple[bool, Optional[str], Optional[str], Optional[Dict[str, Any]]]:
+    task = Task.query.filter_by(id=task_id).first()
+    if not task:
+        return False, "not_found", "任务不存在", None
+    if not _can_operate_task(user or {}, task):
+        return False, "forbidden", "无权限执行该操作", None
+    if new_priority not in E.TASK_PRIORITIES:
+        return False, "bad_request", "invalid priority", None
+    old = str(task.priority or E.TASK_PRIORITY_MEDIUM).strip() or E.TASK_PRIORITY_MEDIUM
+    if old == new_priority:
+        return True, None, None, {"task": _task_public(task), "logs": _task_logs(task.id)}
+    _append_log(
+        task.id,
+        actor,
+        E.TASK_LOG_PRIORITY_CHANGE,
+        note=f"{old} -> {new_priority}",
+    )
+    task.priority = new_priority
     db.session.commit()
     return True, None, None, {"task": _task_public(task), "logs": _task_logs(task.id)}
 
