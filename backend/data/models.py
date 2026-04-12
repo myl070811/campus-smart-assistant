@@ -70,6 +70,7 @@ class Task(db.Model):
     current_owner_id = db.Column(db.String(32), nullable=False, default="")
     current_owner_name = db.Column(db.String(64), nullable=False, default="")
     owner_is_self = db.Column(db.Boolean, nullable=False, default=False)
+    creator_student_id = db.Column(db.String(32), nullable=False, default="")
     due_date = db.Column(db.DateTime(timezone=True), nullable=True)
     priority = db.Column(db.String(16), nullable=False, default="medium")
     status = db.Column(db.String(32), nullable=False, default="pending")
@@ -106,6 +107,7 @@ class ScheduleEvent(db.Model):
     description = db.Column(db.Text, nullable=False, default="")
     is_editable = db.Column(db.Boolean, nullable=False, default=False)
     is_personal_plan = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    owner_student_id = db.Column(db.String(32), nullable=False, default="")
 
 
 class VolunteerRecord(db.Model):

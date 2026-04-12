@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from . import enums as E
 from .db import db
@@ -17,7 +18,7 @@ def _to_iso(dt: datetime | None) -> str:
     return dt.astimezone(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
 
 
-def get_dashboard_data() -> dict:
+def get_dashboard_data(user: Optional[Dict[str, Any]] = None) -> dict:
     """
     Dashboard statistics from database (no mock).
     Keep response shape compatible with current frontend mapper.
@@ -37,12 +38,27 @@ def get_dashboard_data() -> dict:
         .filter(ScheduleEvent.start_at >= today_start, ScheduleEvent.start_at < tomorrow_start)
         .count()
     )
-    today_events = (
-        ScheduleEvent.query
-        .filter(ScheduleEvent.start_at >= today_start, ScheduleEvent.start_at < tomorrow_start)
-        .order_by(ScheduleEvent.start_at.asc(), ScheduleEvent.id.asc())
-        .all()
+    today_ev_q = (
+        ScheduleEvent.query.filter(
+            ScheduleEvent.start_at >= today_start, ScheduleEvent.start_at < tomorrow_start
+        )
     )
+    if user is not None:
+        role = str(user.get("role") or "").strip()
+        if role not in {"org_admin", "tw_admin"}:
+            sid = str(user.get("student_id") or "").strip()
+            if sid:
+                today_ev_q = today_ev_q.filter(
+                    or_(
+                        ScheduleEvent.is_personal_plan.is_(False),
+                        ScheduleEvent.owner_student_id == sid,
+                    )
+                )
+            else:
+                today_ev_q = today_ev_q.filter(ScheduleEvent.is_personal_plan.is_(False))
+    today_events = today_ev_q.order_by(
+        ScheduleEvent.start_at.asc(), ScheduleEvent.id.asc()
+    ).all()
 
     db_val = (
         db.session.query(func.sum(VolunteerRecord.hours))

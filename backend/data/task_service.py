@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 
 from . import enums as E
 from .db import db
@@ -75,6 +75,38 @@ def _collaborating_org_ids_from_payload(normalized: Dict[str, Any]) -> List[str]
     if not isinstance(raw, list):
         return []
     return [str(x).strip() for x in raw if str(x).strip()]
+
+
+def _student_sid(user: Optional[Dict[str, Any]]) -> str:
+    return str((user or {}).get("student_id") or "").strip()
+
+
+def _student_owns_personal_task(user: Dict[str, Any], task: Task) -> bool:
+    if not task.owner_is_self:
+        return False
+    sid = _student_sid(user)
+    if not sid:
+        return False
+    cid = str(getattr(task, "creator_student_id", None) or "").strip()
+    if cid:
+        return cid == sid
+    return str(task.current_owner_id or "").strip() == sid
+
+
+def _assigned_org_task_to_student(user: Dict[str, Any], task: Task) -> bool:
+    if task.owner_is_self:
+        return False
+    username = str((user or {}).get("username") or "").strip()
+    display_name = str((user or {}).get("display_name") or "").strip()
+    names = {x for x in {username, display_name} if x}
+    return bool(task.current_owner_name and task.current_owner_name in names)
+
+
+def user_can_view_task(user: Dict[str, Any], task: Task) -> bool:
+    role = str((user or {}).get("role") or "").strip()
+    if role in {"org_admin", "tw_admin"}:
+        return True
+    return _student_owns_personal_task(user, task) or _assigned_org_task_to_student(user, task)
 
 
 def _task_public(task: Task) -> Dict[str, Any]:
@@ -170,19 +202,34 @@ def list_tasks_for_user(
     if role in {"org_admin", "tw_admin"}:
         return list_tasks(current_org_id=current_org_id, status=status)
 
-    username = str((user or {}).get("username") or "").strip()
-    display_name = str((user or {}).get("display_name") or "").strip()
-    names = {x for x in {username, display_name} if x}
-
     q = Task.query
     if current_org_id:
         q = q.filter(Task.current_org_id == current_org_id)
     if status:
         q = q.filter(Task.status == status)
+
+    username = str((user or {}).get("username") or "").strip()
+    display_name = str((user or {}).get("display_name") or "").strip()
+    names = {x for x in {username, display_name} if x}
+    sid = _student_sid(user)
+
+    visibility = []
     if names:
-        q = q.filter(or_(Task.owner_is_self.is_(True), Task.current_owner_name.in_(list(names))))
-    else:
-        q = q.filter(Task.owner_is_self.is_(True))
+        visibility.append(
+            and_(Task.owner_is_self.is_(False), Task.current_owner_name.in_(list(names)))
+        )
+    if sid:
+        creator_blank = or_(Task.creator_student_id.is_(None), Task.creator_student_id == "")
+        personal_mine = and_(
+            Task.owner_is_self.is_(True),
+            or_(Task.creator_student_id == sid, and_(creator_blank, Task.current_owner_id == sid)),
+        )
+        visibility.append(personal_mine)
+
+    if not visibility:
+        return []
+
+    q = q.filter(or_(*visibility))
     rows = q.order_by(Task.id.asc()).all()
     return [_task_public(t) for t in rows]
 
@@ -192,7 +239,7 @@ def _can_operate_task(user: Dict[str, Any], task: Task) -> bool:
     if role in {"org_admin", "tw_admin"}:
         return True
     if task.owner_is_self:
-        return True
+        return _student_owns_personal_task(user, task)
     username = str((user or {}).get("username") or "").strip()
     display_name = str((user or {}).get("display_name") or "").strip()
     names = {x for x in {username, display_name} if x}
@@ -210,9 +257,14 @@ def create_task(
     if role == "student":
         if str(normalized.get("source_org_id") or "").strip():
             return False, "forbidden", "无权限执行该操作", None
+        stu_id = str((user or {}).get("student_id") or "").strip()
+        if not stu_id:
+            return False, "bad_request", "profile not linked to student account", None
         normalized["source_org_id"] = ""
         normalized["current_org_id"] = str(normalized.get("current_org_id") or "personal").strip() or "personal"
         normalized["current_owner_name"] = display_name or username or "本人"
+        normalized["current_owner_id"] = stu_id
+        normalized["creator_student_id"] = stu_id
         normalized["owner_is_self"] = True
 
     title = str(normalized.get("title", "")).strip()
@@ -275,6 +327,9 @@ def create_task(
             else:
                 collab_json = "[]"
 
+    creator_student_id = ""
+    if role == "student":
+        creator_student_id = str((user or {}).get("student_id") or "").strip()
     task = Task(
         id=_next_task_id(),
         title=title,
@@ -289,6 +344,7 @@ def create_task(
         current_owner_id=current_owner_id,
         current_owner_name=current_owner_name,
         owner_is_self=owner_is_self,
+        creator_student_id=creator_student_id,
         due_date=due_date,
         priority=str(normalized.get("priority", E.TASK_PRIORITY_MEDIUM)),
         status=status,
@@ -301,9 +357,13 @@ def create_task(
     return True, None, None, {"task": _task_public(task), "logs": _task_logs(task.id)}
 
 
-def get_task_detail(task_id: str, actor: str) -> Optional[Tuple[Dict[str, Any], List[Dict[str, Any]]]]:
+def get_task_detail(
+    task_id: str, actor: str, user: Optional[Dict[str, Any]] = None
+) -> Optional[Tuple[Dict[str, Any], List[Dict[str, Any]]]]:
     task = Task.query.filter_by(id=task_id).first()
     if not task:
+        return None
+    if user is not None and not user_can_view_task(user, task):
         return None
     _append_log(task.id, actor, E.TASK_LOG_VIEW)
     db.session.commit()

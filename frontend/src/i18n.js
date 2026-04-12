@@ -1826,6 +1826,12 @@ const DYNAMIC_TEXT_MESSAGES = {
     '完成《数据结构》第三章课后习题': 'Finish Chapter 3 Data Structures Exercises',
     '学生会宣传部本周推文素材整理': 'Student Union Media Materials for This Week',
     '准备英语四级模拟卷复盘': 'Review CET-4 Mock Test',
+    '迎新晚会联合筹备（团委×学生会）':
+      'Orientation Gala Joint Preparation (Youth League × Student Union)',
+    '迎新晚会联合筹备（Youth League×Student Union）':
+      'Orientation Gala Joint Preparation (Youth League × Student Union)',
+    '学习': 'Study',
+    '图书馆志愿整架': 'Library Volunteer Shelf Organization',
     '迎新志愿服务（报到引导）': 'Orientation Volunteer Service (Registration Guidance)',
     '校园马拉松后勤保障': 'Campus Marathon Logistics Support',
     '全国大学生软件创新大赛 华东赛区 二等奖': 'National University Software Innovation Contest, East China Division, Second Prize',
@@ -1947,6 +1953,12 @@ const DYNAMIC_TEXT_MESSAGES = {
     '完成《数据结构》第三章课后习题': 'Выполнить упражнения к главе 3 по структурам данных',
     '学生会宣传部本周推文素材整理': 'Подготовка материалов для постов отдела медиа студсовета',
     '准备英语四级模拟卷复盘': 'Разбор пробного теста CET-4',
+    '迎新晚会联合筹备（团委×学生会）':
+      'Совместная подготовка встречи первокурсников (комсомол × студсовет)',
+    '迎新晚会联合筹备（Youth League×Student Union）':
+      'Совместная подготовка встречи первокурсников (комсомол × студсовет)',
+    '学习': 'Учёба',
+    '图书馆志愿整架': 'Волонтёрская расстановка книг в библиотеке',
     '迎新志愿服务（报到引导）': 'Волонтёрство для первокурсников (навигация при регистрации)',
     '校园马拉松后勤保障': 'Логистическая поддержка кампусного марафона',
     '全国大学生软件创新大赛 华东赛区 二等奖': '2-е место на восточнокитайском этапе всекитайского конкурса программных инноваций',
@@ -2060,7 +2072,9 @@ export function td(value) {
   let out = raw
   const entries = Object.entries(pack).sort((a, b) => b[0].length - a[0].length)
   for (const [from, to] of entries) {
-    if (from && out.includes(from)) out = out.split(from).join(to)
+    // 短词仅走上一段精确匹配；子串替换跳过 length<3，避免「学习」等拆进更长句子
+    if (!from || from.length < 3) continue
+    if (out.includes(from)) out = out.split(from).join(to)
   }
   return out
 }

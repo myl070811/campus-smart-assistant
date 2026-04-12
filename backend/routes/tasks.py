@@ -69,7 +69,8 @@ def create_task():
 @bp.get("/<task_id>")
 @require_login
 def get_task_detail(task_id: str):
-    row = task_service.get_task_detail(task_id, _actor())
+    user = get_current_user() or {}
+    row = task_service.get_task_detail(task_id, _actor(), user=user)
     if not row:
         return jsonify({"error": "not_found", "message": "任务不存在"}), 404
     task, logs = row

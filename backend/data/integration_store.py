@@ -106,6 +106,7 @@ def _schedule_row(row: Dict[str, Any], event_type: str, source: str, title_key: 
         "description": str(row.get("description") or "").strip(),
         "is_editable": False,
         "is_personal_plan": False,
+        "owner_student_id": "",
     }
 
 

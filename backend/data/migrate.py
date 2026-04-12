@@ -66,6 +66,25 @@ def run_migrations() -> None:
     _add_column_if_missing("tasks", "collaborating_org_ids_json", "TEXT", "'[]'")
     _add_column_if_missing("tasks", "parent_task_id", "VARCHAR(32)")
     _add_column_if_missing("tasks", "current_owner_id", "VARCHAR(32)")
+    _add_column_if_missing("tasks", "creator_student_id", "VARCHAR(32)")
+    _add_column_if_missing("schedule_events", "owner_student_id", "VARCHAR(32)")
+
+    # 个人任务：旧数据用 current_owner_id 回填创建者学号（与 list/详情鉴权一致）
+    db.session.execute(
+        text(
+            "UPDATE tasks SET creator_student_id = current_owner_id "
+            "WHERE owner_is_self = 1 AND (creator_student_id IS NULL OR TRIM(creator_student_id) = '') "
+            "AND TRIM(current_owner_id) != ''"
+        )
+    )
+    # 演示个人日程 plan_1001 归属陈思远账号
+    db.session.execute(
+        text(
+            "UPDATE schedule_events SET owner_student_id = '2023XXXX0218' "
+            "WHERE id = 'plan_1001' AND is_personal_plan = 1 "
+            "AND (owner_student_id IS NULL OR TRIM(owner_student_id) = '')"
+        )
+    )
 
     # 旧库：direct/self → single_department；assignment_type 列若曾为 direct 则升级
     db.session.execute(

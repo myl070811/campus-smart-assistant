@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from .db import db
 from .models import ScheduleEvent
@@ -39,6 +39,26 @@ EVENT_TYPES = (
     EVENT_TYPE_WORK_STUDY,
     EVENT_TYPE_INNOVATION_PROJECT,
 )
+
+
+def _is_schedule_admin(user: Optional[Dict[str, Any]]) -> bool:
+    role = str((user or {}).get("role") or "").strip()
+    return role in {"org_admin", "tw_admin"}
+
+
+def _schedule_student_sid(user: Optional[Dict[str, Any]]) -> str:
+    return str((user or {}).get("student_id") or "").strip()
+
+
+def _assert_personal_plan_write(user: Optional[Dict[str, Any]], row: ScheduleEvent) -> None:
+    if _is_schedule_admin(user):
+        return
+    sid = _schedule_student_sid(user or {})
+    owner = str(row.owner_student_id or "").strip()
+    if sid and owner == sid:
+        return
+    raise PermissionError("forbidden")
+
 
 def _to_iso(dt: Optional[datetime]) -> str:
     if not dt:
@@ -83,16 +103,40 @@ def _next_plan_id() -> str:
     return f"plan_{n}"
 
 
-def list_events(event_types: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+def list_events(
+    event_types: Optional[List[str]] = None,
+    user: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
     q = ScheduleEvent.query
     if event_types:
         allow = set(event_types)
         q = q.filter(ScheduleEvent.event_type.in_(allow))
+    if user is not None and not _is_schedule_admin(user):
+        sid = _schedule_student_sid(user)
+        if sid:
+            q = q.filter(
+                or_(
+                    ScheduleEvent.is_personal_plan.is_(False),
+                    ScheduleEvent.owner_student_id == sid,
+                )
+            )
+        else:
+            q = q.filter(ScheduleEvent.is_personal_plan.is_(False))
     events = q.order_by(ScheduleEvent.start_at.asc()).all()
     return [_event_public(x) for x in events]
 
 
-def create_personal_plan(payload: Dict[str, Any]) -> Dict[str, Any]:
+def create_personal_plan(
+    payload: Dict[str, Any], user: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    role = str((user or {}).get("role") or "").strip()
+    sid = _schedule_student_sid(user or {})
+    if _is_schedule_admin(user or {}):
+        owner = str(payload.get("owner_student_id") or "").strip() or sid
+    else:
+        if role != "student" or not sid:
+            raise ValueError("profile not linked to student account")
+        owner = sid
     plan = {
         "id": _next_plan_id(),
         "title": str(payload.get("title", "")).strip(),
@@ -116,16 +160,20 @@ def create_personal_plan(payload: Dict[str, Any]) -> Dict[str, Any]:
         description=plan["description"],
         is_editable=True,
         is_personal_plan=True,
+        owner_student_id=owner,
     )
     db.session.add(row)
     db.session.commit()
     return _event_public(row)
 
 
-def update_personal_plan(plan_id: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def update_personal_plan(
+    plan_id: str, payload: Dict[str, Any], user: Optional[Dict[str, Any]] = None
+) -> Optional[Dict[str, Any]]:
     old = ScheduleEvent.query.filter_by(id=plan_id, is_personal_plan=True).first()
     if not old:
         return None
+    _assert_personal_plan_write(user, old)
     plan = {
         "id": old.id,
         "title": str(payload.get("title", old.title)).strip(),
@@ -147,10 +195,11 @@ def update_personal_plan(plan_id: str, payload: Dict[str, Any]) -> Optional[Dict
     return _event_public(old)
 
 
-def delete_personal_plan(plan_id: str) -> bool:
+def delete_personal_plan(plan_id: str, user: Optional[Dict[str, Any]] = None) -> bool:
     row = ScheduleEvent.query.filter_by(id=plan_id, is_personal_plan=True).first()
     if not row:
         return False
+    _assert_personal_plan_write(user, row)
     db.session.delete(row)
     db.session.commit()
     return True
@@ -165,5 +214,3 @@ def _validate_plan(plan: Dict[str, Any]) -> None:
     end = _parse_iso(plan["end_at"])
     if end <= start:
         raise ValueError("end_at must be later than start_at")
-
-
